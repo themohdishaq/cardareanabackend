@@ -15,7 +15,7 @@ const httpServer = http.createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
-    origin: "bazargame.vercel.app" || "http://localhost:3000",
+    origin: true,
     methods: ["GET", "POST"],
   },
 });

@@ -465,17 +465,60 @@ function handleThrowCard(io, socket, rooms, roomId, cardSource, handIndex) {
     return;
   }
 
-  gs.market.push(thrownCard);
+  const marketMatches = findMarketMatches(gs.market, thrownCard.rank);
 
-  gs.lastAction = {
-    type: "throw",
-    player: gs.players[gs.turn],
-    card: thrownCard,
-  };
+  // Check all opponents' wallet tops for a rank match
+  const walletMatches = gs.players.filter(
+    (p) => p.id !== socket.id && walletTop(gs.wallets[p.id])?.rank === thrownCard.rank
+  );
 
-  advanceTurn(gs);
-  checkGameEnd(gs);
-  emitGameUpdate(io, roomId, room);
+  const hasMatch = marketMatches.length > 0 || walletMatches.length > 0;
+
+  if (hasMatch) {
+    const collected = [thrownCard];
+
+    // Collect matching market cards
+    const matchedIndices = marketMatches.map((m) => m.index).sort((a, b) => b - a);
+    for (const idx of matchedIndices) {
+      collected.push(gs.market.splice(idx, 1)[0]);
+    }
+
+    // Collect consecutive same-rank cards from each matching opponent wallet top
+    for (const p of walletMatches) {
+      const targetWallet = gs.wallets[p.id];
+      while (targetWallet.length > 0 && walletTop(targetWallet).rank === thrownCard.rank) {
+        collected.push(targetWallet.pop());
+      }
+    }
+
+    gs.wallets[socket.id].push(...collected);
+    checkAndLock(gs, socket.id);
+
+    gs.lastAction = {
+      type: "throw_collect",
+      player: gs.players[gs.turn],
+      card: thrownCard,
+      collected,
+    };
+
+    // Turn remains — player acts again
+    gs.turnChaining = true;
+    checkGameEnd(gs);
+    emitGameUpdate(io, roomId, room);
+  } else {
+    // No match — card goes to market, turn ends
+    gs.market.push(thrownCard);
+
+    gs.lastAction = {
+      type: "throw",
+      player: gs.players[gs.turn],
+      card: thrownCard,
+    };
+
+    advanceTurn(gs);
+    checkGameEnd(gs);
+    emitGameUpdate(io, roomId, room);
+  }
 }
 
 module.exports = {
